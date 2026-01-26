@@ -22,8 +22,8 @@ AGENT_NAME = "agent"
 USER = "user"
 
 BASE_ENDPOINT = "https://api.tryflowstate.dev"
-WORKFLOWS_RESOLVE_ENDPOINT = "https://api.tryflowstate.dev/sdk/metrics"
+WORKFLOWS_RESOLVE_ENDPOINT = "https://api.tryflowstate.dev/sdk/workflows/resolve"
 AUTH_ENDPOINT = "https://api.tryflowstate.dev/sdk/auth"
-METRICS_ENDPOINT = "https://api.tryflowstate.dev/sdk/workflows/resolve"
+METRICS_ENDPOINT = "https://api.tryflowstate.dev/sdk/metrics"
 
 SKIP_SDK_METRICS_FLAG = "SKIP_SDK_METRICS"
