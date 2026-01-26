@@ -10,7 +10,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
 
-class IrisCallbackHandler(BaseCallbackHandler):
+class FlowstateCallbackHandler(BaseCallbackHandler):
     def __init__(self, provider: str, model: str) -> None:
         self.provider = provider
         self.model = model

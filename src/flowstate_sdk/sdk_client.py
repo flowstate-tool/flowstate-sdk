@@ -59,7 +59,7 @@ class SDKClient:
             except Exception:
                 pass
             if response.status_code != 200:
-                if os.environ.get():
+                if os.environ.get(constants.SKIP_SDK_METRICS_FLAG):
                     return
                 raise MetricsDumpError(constants.METRICS_DUMP_ERROR)
         except Exception:
