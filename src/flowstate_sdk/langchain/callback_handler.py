@@ -1,9 +1,10 @@
-# flowstate_langchain_callback.py
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from flowstate_sdk import context
 from flowstate_sdk.cost_table import COST_TABLE
+from flowstate_sdk.enums import TaskTypes
 from flowstate_sdk.shared_dataclasses import ProviderMetrics
 from flowstate_sdk.task_context import TaskContext
 from langchain_core.callbacks import BaseCallbackHandler
@@ -90,4 +91,15 @@ class FlowstateCallbackHandler(BaseCallbackHandler):
         )
 
         task_ctx = self._get_active_task()
-        task_ctx.log_llm_usage(provider_metrics)
+        llm_ctx = TaskContext(
+            task_step_id=str(uuid.uuid4()),
+            client=task_ctx.client,
+            func_name=f"{task_ctx.func_name}.llm",
+            type=TaskTypes.LLM,
+            metadata={"provider": self.provider, "model": self.model},
+        )
+        llm_ctx.__enter__()
+        try:
+            llm_ctx.log_llm_usage(provider_metrics)
+        finally:
+            llm_ctx.__exit__(None, None, None)
