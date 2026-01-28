@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from flowstate_sdk import context
 from flowstate_sdk.cost_table import COST_TABLE
@@ -11,6 +11,76 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
 
+def _content_to_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        chunks: List[str] = []
+        for part in content:
+            if isinstance(part, str):
+                chunks.append(part)
+            elif isinstance(part, dict):
+                if isinstance(part.get("text"), str):
+                    chunks.append(part["text"])
+                else:
+                    chunks.append(str(part))
+            else:
+                chunks.append(str(part))
+        return "\n".join(chunks)
+
+    if isinstance(content, dict):
+        if isinstance(content.get("text"), str):
+            return content["text"]
+        return str(content)
+
+    return str(content)
+
+
+def _extract_system_and_user_from_messages(
+    msgs: Optional[List[Any]],
+) -> Tuple[Optional[str], Optional[str]]:
+    if not msgs:
+        return None, None
+
+    system_parts: List[str] = []
+    user_parts: List[str] = []
+
+    for m in msgs:
+        m_type = getattr(m, "type", None)
+        content = getattr(m, "content", None)
+        text = _content_to_text(content).strip()
+        if not text:
+            continue
+
+        if m_type == "system":
+            system_parts.append(text)
+        elif m_type == "human":
+            user_parts.append(text)
+
+    system_prompt = "\n\n".join(system_parts).strip() or None
+    user_prompt = "\n\n".join(user_parts).strip() or None
+    return system_prompt, user_prompt
+
+
+def _get_messages_from_kwargs(kwargs: Dict[str, Any]) -> Optional[List[Any]]:
+    msgs = kwargs.get("messages")
+    if msgs is not None:
+        return msgs
+
+    inputs = kwargs.get("inputs")
+    if isinstance(inputs, dict) and inputs.get("messages") is not None:
+        return inputs.get("messages")
+
+    inp = kwargs.get("input")
+    if isinstance(inp, dict) and inp.get("messages") is not None:
+        return inp.get("messages")
+
+    return None
+
+
 class FlowstateCallbackHandler(BaseCallbackHandler):
     def __init__(self, provider: str, model: str) -> None:
         self.provider = provider
@@ -19,6 +89,8 @@ class FlowstateCallbackHandler(BaseCallbackHandler):
         self._input_chars: Optional[int] = None
         self._input_str: Optional[str] = None
         self._tool_name: Optional[str] = None
+        self._system_prompt: Optional[str] = None
+        self._user_prompt: Optional[str] = None
 
     def _get_active_task(self) -> TaskContext:
         run_stack: List[TaskContext] = context.run_stack.get()
@@ -33,8 +105,20 @@ class FlowstateCallbackHandler(BaseCallbackHandler):
     ) -> None:
         self._start_ts = time.time()
         self._tool_name = serialized.get("name")
-        self._input_chars = len(prompts[0]) if len(prompts) > 0 else None
-        self._input = prompts[0] if len(prompts) > 0 else None
+
+        self._input_str = prompts[0] if prompts else None
+        self._input_chars = len(self._input_str) if self._input_str else None
+
+        msgs = _get_messages_from_kwargs(kwargs)
+        sys_p, user_p = _extract_system_and_user_from_messages(msgs)
+
+        if (not sys_p) and isinstance(kwargs.get("system"), str):
+            sys_p = kwargs["system"].strip() or None
+        if (not sys_p) and isinstance(kwargs.get("system_prompt"), str):
+            sys_p = kwargs["system_prompt"].strip() or None
+
+        self._system_prompt = sys_p
+        self._user_prompt = user_p
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         latency = (time.time() - self._start_ts) if self._start_ts else None
@@ -46,27 +130,27 @@ class FlowstateCallbackHandler(BaseCallbackHandler):
         if not generation_chunk:
             return
         if (
-            not generation_chunk.generation_info["finish_reason"]
+            not generation_chunk.generation_info.get("finish_reason")
             or generation_chunk.generation_info["finish_reason"] != "stop"
         ):
             return
 
         ai_message_chunk = generation_chunk.message
 
-        if ai_message_chunk:
-            usage = ai_message_chunk.usage_metadata
+        usage: Dict[str, Any] = {}
+        if ai_message_chunk and getattr(ai_message_chunk, "usage_metadata", None):
+            usage = ai_message_chunk.usage_metadata or {}
 
-        input_tokens = usage.get("input_tokens", 0)
-        output_tokens = usage.get("output_tokens", 0)
+        input_tokens = usage.get("input_tokens", 0) or 0
+        output_tokens = usage.get("output_tokens", 0) or 0
 
-        cost_usd = 0.0
         input_cost_per_token_usd = (
             COST_TABLE.get(self.provider, {}).get(self.model, {}).get("input", 0.0)
         )
         output_cost_per_token_usd = (
             COST_TABLE.get(self.provider, {}).get(self.model, {}).get("output", 0.0)
         )
-        cost_usd += (
+        cost_usd = (
             input_cost_per_token_usd * input_tokens
             + output_cost_per_token_usd * output_tokens
         )
@@ -86,7 +170,8 @@ class FlowstateCallbackHandler(BaseCallbackHandler):
             output_tokens=output_tokens,
             tool_name=self._tool_name,
             cost_usd=cost_usd if cost_usd != 0.0 else None,
-            raw_input=self._input_str,
+            system_prompt=self._system_prompt,
+            user_prompt=self._user_prompt,
             raw_response=response,
         )
 
