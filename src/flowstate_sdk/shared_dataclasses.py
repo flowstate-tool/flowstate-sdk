@@ -15,6 +15,8 @@ class ProviderMetrics:
     output_tokens: Optional[int] = None
     cost_usd: Optional[float] = None
     raw_input: Optional[str] = None
+    system_prompt: Optional[str] = None
+    user_prompt: Optional[str] = None
     raw_response: Any = field(default=None)
 
 
