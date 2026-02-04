@@ -1,6 +1,7 @@
 import uuid
 from collections import defaultdict
 from datetime import datetime
+import os
 
 from . import context
 from .sdk_client import SDKClient
@@ -39,6 +40,12 @@ class Workflow:
             k: v for k, v in workflow_record.__dict__.items() if v is not None
         }
         self.client.emit(workflow_payload)
+
+        if os.getenv("IS_FLOWSTATE_REPLAY"):
+            replay_list = self.client.retrieve_replay_plan(os.getenv("FLOWSTATE_REPLAY_PARENT_ID"))
+            context.replay_counter.set(0)
+            context.replay_step_list.set(replay_list)
+            context.is_replay.set(True)
 
         run_payload = RunRecord(
             run_id=str(self.run_id),

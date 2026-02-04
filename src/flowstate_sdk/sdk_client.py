@@ -51,6 +51,7 @@ class SDKClient:
         try:
             response = requests.post(
                 constants.METRICS_ENDPOINT,
+                headers={constants.AUTH_HEADER_NAME: self._api_key},
                 json=safe_payload,
                 timeout=constants.SDK_ENDPOINT_TIMEOUT,
             )
